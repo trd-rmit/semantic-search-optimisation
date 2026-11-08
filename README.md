@@ -175,13 +175,3 @@ Share of questions where the right chunk is the **1st** result, in the **top 5**
 | Cohere Embed English v3 | 46.9% | 77.4% | 85.4% |
 | Cohere Embed Multilingual v3 | 50.0% | 74.6% | 81.5% |
 | Titan Text Embeddings v2 | 46.7% | 71.8% | 79.5% |
-
-Findings:
-- **Cohere v4 and Nova 2 are tied for first.** The 1-point gap at hit@5 could be chance (McNemar p = 0.64). Both are far ahead of the older models (p < 0.001).
-- **Room for a reranker:** for 95.6% of questions the right chunk is already in the top 10, but only 91.5% are in the top 5. A reranker that re-sorts the top 10 could lift hit@5 towards ~95%.
-- **9 questions failed with every model.** Two reasons: very short guideline entries lose out to longer, related ones (*Fibromyalgia* loses to *Painkillers* when a question mentions paracetamol), which keyword search could fix; and some questions have more than one correct answer that we haven't labelled yet.
-- Titan v1 was skipped: this account only allows it a few requests per minute. Nova 2 is also limited (20 requests per minute, ~37 minutes for this run); Cohere finished in about a minute.
-
-More detailed numbers (hit@3, MRR, results by question type) are stored per run in Postgres (`runs.metrics`).
-
-Next: round 2 tests settings (vector size, int8/binary, query/document mode) on Cohere v4 and Nova 2.
