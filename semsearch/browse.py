@@ -25,7 +25,8 @@ def query(sql, *params):
 def tree():
     return {
         "counts": query("SELECT (SELECT count(*) FROM entries) AS entries, (SELECT count(*) FROM scenarios) AS scenarios,"
-                        " (SELECT count(*) FROM sections) AS sections, (SELECT count(*) FROM links) AS links")[0],
+                        " (SELECT count(*) FROM sections) AS sections, (SELECT count(*) FROM links) AS links,"
+                        " (SELECT count(*) FROM chunks) AS chunks")[0],
         "entries": query("SELECT entry_id, slug, title FROM entries ORDER BY lower(title)"),
         "scenarios": query("SELECT scenario_id, entry_id, position, title FROM scenarios ORDER BY entry_id, position"),
         "sections": query("SELECT section_id, entry_id, scenario_id, kind, position FROM sections ORDER BY entry_id, position"),
@@ -43,6 +44,10 @@ def entry(entry_id):
         "links": query("SELECT l.*, t.title AS to_title FROM links l JOIN sections s ON s.section_id = l.from_section_id"
                        " LEFT JOIN entries t ON t.entry_id = l.to_entry_id WHERE s.entry_id = %s ORDER BY l.link_id",
                        entry_id),
+        "chunks": query("SELECT c.chunk_id, c.scenario_id, c.chars, c.text, array_agg(cs.section_id ORDER BY cs.section_id)"
+                        " AS section_ids FROM chunks c JOIN chunk_sections cs USING (chunk_id)"
+                        " LEFT JOIN scenarios sc USING (scenario_id) WHERE c.entry_id = %s"
+                        " GROUP BY c.chunk_id, sc.position ORDER BY sc.position NULLS FIRST", entry_id),
         "incoming": query("SELECT f.entry_id, f.title, s.kind AS in_section, count(*) AS n FROM links l"
                           " JOIN sections s ON s.section_id = l.from_section_id JOIN entries f ON f.entry_id = s.entry_id"
                           " WHERE l.to_entry_id = %s GROUP BY 1, 2, 3 ORDER BY lower(f.title)", entry_id),

@@ -1,7 +1,7 @@
-"""Parse the JPAC offline HTML (WB-DSG) into Postgres: entries, scenarios, sections, links.
+"""Parse the JPAC offline HTML (WB-DSG) into Postgres: entries, scenarios, sections, links, then chunks.
 
 Usage: python -m semsearch.load_jpac
-Drops and recreates the tables from db/schema.sql on every run.
+Drops and recreates the tables from db/schema.sql and db/chunks.sql on every run.
 """
 import re
 from datetime import datetime
@@ -28,20 +28,20 @@ def to_text(html):
     el = BeautifulSoup(html, "html.parser")
     for s in el.find_all(string=True):
         s.replace_with(re.sub(r"\s+", " ", s))
-    for ol in el.find_all("ol"):
-        for i, li in enumerate(ol.find_all("li", recursive=False), 1):
-            li.insert(0, f"{i}. ")
-    for ul in el.find_all("ul"):
-        for li in ul.find_all("li", recursive=False):
-            li.insert(0, "- ")
+    for lst in el.find_all(["ol", "ul"]):
+        lst.insert_before("\n")  # a nested list starts on its own line, not glued to its parent item
+        depth = len(lst.find_parents(["ol", "ul"]))
+        for i, li in enumerate(lst.find_all("li", recursive=False), 1):
+            li.insert(0, "\t" * depth + (f"{i}. " if lst.name == "ol" else "- "))  # tab = nesting level
     for cell in el.find_all(["td", "th"]):
         cell.append(" | ")
     for br in el.find_all("br"):
         br.replace_with("\n")
     for b in el.find_all(BLOCKS):
         b.append("\n")
-    lines = (line.strip().rstrip("|").strip() for line in el.get_text().split("\n"))
-    return "\n".join(line for line in lines if line)
+    lines = (line.strip(" ").rstrip("|").strip(" ") for line in el.get_text().split("\n"))
+    # strip(" ") keeps the nesting tabs; turn each into a 3-space indent
+    return "\n".join(re.sub(r"^\t+", lambda m: "   " * len(m.group()), line) for line in lines if line.strip())
 
 
 def classify(url, entry_slugs):
@@ -152,7 +152,8 @@ def main():
                                 (section_id, target_kind, ids.get(slug), url,
                                  a.get_text(" ", strip=True), context_of(a, dd)))
 
-        for table in ["entries", "scenarios", "sections", "links"]:
+        cur.execute(Path("db/chunks.sql").read_text())
+        for table in ["entries", "scenarios", "sections", "links", "chunks", "chunk_sections"]:
             cur.execute(f"SELECT count(*) FROM {table}")
             print(f"{table:10} {cur.fetchone()[0]}")
 

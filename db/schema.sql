@@ -1,7 +1,7 @@
 -- JPAC Whole Blood and Components Donor Selection Guidelines, as relational data.
 -- Re-running this file drops and recreates everything (the loader does that on each load).
 
-DROP TABLE IF EXISTS links, sections, scenarios, entries CASCADE;
+DROP TABLE IF EXISTS chunk_sections, chunks, links, sections, scenarios, entries CASCADE;
 
 -- One A-Z entry (e.g. Alopecia).
 CREATE TABLE entries (

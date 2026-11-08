@@ -44,6 +44,34 @@ python -m semsearch.browse           # tree view of the tables at http://localho
 
 Source data quirks, stored as published: Haematuria's version date reads "(Date)", and Hepatitis B says "Release 87" although the current release is 82.
 
+### Chunks
+
+Built by [db/chunks.sql](db/chunks.sql), which the loader runs after the other tables. Chunks follow the guideline's own structure; nothing is split by size. A chunk is one complete set of rules for one situation.
+
+| Entry type | One chunk = | Count | Median / max size |
+|---|---|---|---|
+| Entry without scenarios (e.g. Alopecia) | The whole entry | 199 | ~270 / ~1,600 tokens |
+| Entry with scenarios (e.g. Hepatitis B) | One scenario, plus every entry-level section (Definitions, Includes, entry-wide Additional information, …) | 80 | ~220 / ~1,180 tokens |
+| **Total** | | **279** | |
+
+Token counts are estimates (characters ÷ 4).
+
+Tables:
+- `chunks`: chunk_id, entry_id → entries, scenario_id → scenarios (NULL = whole entry), `text` (what gets embedded), `chars`.
+- `chunk_sections`: which sections went into each chunk. Shared sections appear in several chunks; e.g. Hepatitis B's Definitions is in all 5 of its chunks.
+- URL, release, linked entries etc. are reached through these keys rather than copied into the chunk.
+
+Embedded text = entry title + scenario title + these sections: Also known as, Includes, Excludes, Definitions, Obligatory, Discretionary, Additional information, Post donation illness.
+
+Left out of the embedded text:
+- *See if relevant*: only a list of entry names. Kept via `links` instead.
+- *Regulatory information*: the same legal text in 57 entries.
+- Version info.
+
+One scenario has no chunk: Immunisation → "Non-exposed" only says "see Immunisation, live / non-live / Smallpox immunisation", and those entries have their own chunks.
+
+68 chunks (50 whole entries, 18 scenarios) are over ~512 tokens. Cohere Embed v3 cuts input off at 512 tokens; Titan v2 (8k) and Cohere v4 read them whole.
+
 **Still open:** there are no questions yet, so we need to write them (LLM-generated, then checked by a person).
 
 Ways to build the test set:

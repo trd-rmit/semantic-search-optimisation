@@ -45,6 +45,8 @@
   .kind-obligatory .kind { color: var(--ob); }
   .kind-discretionary .kind { color: var(--dis); }
   .text { white-space: pre-wrap; margin: 4px 0; }
+  .chunk { border-left: 4px solid var(--accent); }
+  .chunk .kind { color: var(--accent); }
   .links { margin: 6px 0 0; padding: 6px 0 0; border-top: 1px dashed var(--line); font-size: 13px; }
   .links li { margin: 2px 0; }
   a, .go { color: var(--accent); cursor: pointer; text-decoration: none; }
@@ -91,7 +93,7 @@ let current = null;
 async function loadTree() {
   const t = await (await fetch("/api/tree")).json();
   const c = t.counts;
-  $("#counts").textContent = `${c.entries} entries · ${c.scenarios} scenarios · ${c.sections} sections · ${c.links} links`;
+  $("#counts").textContent = `${c.entries} entries · ${c.scenarios} scenarios · ${c.sections} sections · ${c.links} links · ${c.chunks} chunks`;
   const by = (rows, key) => {
     const m = new Map();
     for (const r of rows) { if (!m.has(r[key])) m.set(r[key], []); m.get(r[key]).push(r); }
@@ -168,6 +170,15 @@ async function show(entryId, sectionId = null, scenarioId = null) {
         detail.append(box);
       }
       box.append(sectionCard(s, d.links));
+    }
+    detail.append(el("h3", {}, `Chunks (${d.chunks.length})`));
+    if (!d.chunks.length) detail.append(el("p", { class: "keys" }, "No chunk: nothing in this entry is embedded."));
+    for (const c of d.chunks) {
+      const sc = d.scenarios.find((x) => x.scenario_id === c.scenario_id);
+      detail.append(el("div", { class: "section chunk", id: `chunk-${c.chunk_id}` },
+        el("h4", {}, el("span", { class: "kind" }, sc ? `Chunk: scenario ${sc.position}` : "Chunk: whole entry"),
+          el("span", { class: "keys" }, `chunk_id ${c.chunk_id} · scenario_id ${c.scenario_id ?? "NULL"} · ${c.chars} chars (~${Math.round(c.chars / 4)} tokens) · section_ids ${c.section_ids.join(", ")}`)),
+        el("div", { class: "text" }, c.text)));
     }
     detail.append(el("h3", {}, `Linked from (${d.incoming.reduce((n, r) => n + r.n, 0)} links)`),
       d.incoming.length ? el("ul", {}, ...d.incoming.map((r) => el("li", {},
