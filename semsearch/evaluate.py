@@ -49,6 +49,32 @@ def ensure_embeddings(cur, config, cfg, kind, items, region):
     return len(todo)
 
 
+def load_questions(cur, split):
+    """Questions of a split, each with its gold chunk keys (primary + also_valid) and its primary chunk's size."""
+    cur.execute(
+        "SELECT q.question_id, q.question, q.style, array_agg(c.key),"
+        " max(c.key) FILTER (WHERE qc.role = 'primary'), max(c.chars) FILTER (WHERE qc.role = 'primary')"
+        " FROM questions q JOIN question_chunks qc USING (question_id) JOIN chunks c USING (chunk_id)"
+        " WHERE q.split = %s GROUP BY q.question_id ORDER BY q.question_id", (split,))
+    return [dict(zip(["id", "question", "style", "gold", "primary_key", "primary_chars"], r)) for r in cur.fetchall()]
+
+
+def save_run(cur, name, config, split, questions, top):
+    """Score top-10 chunk keys per question, save as a run (replacing an earlier run of the same config)."""
+    ranks = {q["id"]: first_hit([k in q["gold"] for k in top[q["id"]]]) for q in questions}
+    metrics = summarize(list(ranks.values()))
+    for g, keep in GROUPS.items():
+        sub = [ranks[q["id"]] for q in questions if keep(q)]
+        metrics[g] = {"n": len(sub), **summarize(sub)}
+    cur.execute("DELETE FROM runs WHERE name = %s AND config = %s AND split = %s", (name, config, split))
+    cur.execute("INSERT INTO runs (name, config, split, metrics) VALUES (%s, %s, %s, %s) RETURNING run_id",
+                (name, config, split, json.dumps(metrics)))
+    run_id = cur.fetchone()[0]
+    cur.executemany("INSERT INTO run_results (run_id, question_id, rank, top_keys) VALUES (%s, %s, %s, %s)",
+                    [(run_id, qid, ranks[qid], top[qid]) for qid in ranks])
+    return run_id, metrics, ranks
+
+
 def main(path):
     plan = tomllib.loads(Path(path).read_text())
     region, split = plan["region"], plan["split"]
@@ -56,12 +82,7 @@ def main(path):
         cur.execute(Path("db/embeddings.sql").read_text())
         cur.execute("SELECT key, text FROM chunks")
         chunks = dict(cur.fetchall())
-        cur.execute(
-            "SELECT q.question_id, q.question, q.style, array_agg(c.key),"
-            " max(c.key) FILTER (WHERE qc.role = 'primary'), max(c.chars) FILTER (WHERE qc.role = 'primary')"
-            " FROM questions q JOIN question_chunks qc USING (question_id) JOIN chunks c USING (chunk_id)"
-            " WHERE q.split = %s GROUP BY q.question_id ORDER BY q.question_id", (split,))
-        questions = [dict(zip(["id", "question", "style", "gold", "primary_key", "primary_chars"], r)) for r in cur.fetchall()]
+        questions = load_questions(cur, split)
         print(f"{len(chunks)} chunks, {len(questions)} {split} questions, region {region}\n")
 
         rows, hits5 = [], {}
@@ -78,19 +99,7 @@ def main(path):
                 " FROM embeddings q WHERE q.config = %(config)s AND q.kind = 'question' AND q.key = ANY(%(qs)s)",
                 {"chunks": list(chunks), "config": config, "qs": [q["id"] for q in questions]})
             top = dict(cur.fetchall())
-            ranks = {q["id"]: first_hit([k in q["gold"] for k in top[q["id"]]]) for q in questions}
-
-            metrics = summarize(list(ranks.values()))
-            for g, keep in GROUPS.items():
-                sub = [ranks[q["id"]] for q in questions if keep(q)]
-                metrics[g] = {"n": len(sub), **summarize(sub)}
-            # re-scoring the same config replaces its earlier run instead of adding a duplicate
-            cur.execute("DELETE FROM runs WHERE name = %s AND config = %s AND split = %s", (name, config, split))
-            cur.execute("INSERT INTO runs (name, config, split, metrics) VALUES (%s, %s, %s, %s) RETURNING run_id",
-                        (name, config, split, json.dumps(metrics)))
-            run_id = cur.fetchone()[0]
-            cur.executemany("INSERT INTO run_results (run_id, question_id, rank, top_keys) VALUES (%s, %s, %s, %s)",
-                            [(run_id, qid, ranks[qid], top[qid]) for qid in ranks])
+            run_id, metrics, ranks = save_run(cur, name, config, split, questions, top)
             conn.commit()
 
             hits5[name] = [ranks[q["id"]] is not None and ranks[q["id"]] <= 5 for q in questions]

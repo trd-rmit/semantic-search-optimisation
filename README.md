@@ -18,6 +18,18 @@ Share of questions where the right chunk is the **1st** result, in the **top 5**
 | Cohere Embed Multilingual v3 | 50.0% | 74.6% | 81.5% |
 | Titan Text Embeddings v2 | 46.7% | 71.8% | 79.5% |
 
+## Key findings: mean-centred embeddings (dev set, 390 questions)
+
+Same vectors as above, with the mean chunk vector subtracted from every chunk and question vector. No re-embedding.
+
+| Model | hit@1 | **hit@5** | hit@10 |
+|---|---|---|---|
+| **Nova 2 Multimodal Embeddings** | 67.7% | **93.1%** | 97.2% |
+| Cohere Embed v4 | 67.4% | 90.5% | 94.1% |
+| Cohere Embed Multilingual v3 | 55.4% | 83.3% | 90.0% |
+| Cohere Embed English v3 | 53.6% | 83.3% | 89.0% |
+| Titan Text Embeddings v2 | 46.2% | 70.5% | 76.9% |
+
 ## Goal and metric
 
 - **Primary metric:** `hit@5`, the share of questions where the correct chunk appears in the top 5 results.
