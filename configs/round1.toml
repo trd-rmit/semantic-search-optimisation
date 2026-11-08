@@ -1,0 +1,38 @@
+# Round 1: every embedding model on its best settings, scored on the dev questions.
+# Keys other than `name`, `model` and `rpm` go straight to the model API. `rpm` paces one-text-per-request
+# models to the account's requests-per-minute quota.
+region = "us-east-1"
+split = "dev"
+
+[[embedding]]
+name = "titan-v2"
+model = "amazon.titan-embed-text-v2:0"
+dimensions = 1024
+normalize = true
+
+# Skipped: Titan v1 (legacy) is throttled to a few requests per minute on this account, so 669 texts take hours.
+# [[embedding]]
+# name = "titan-v1"
+# model = "amazon.titan-embed-text-v1"
+
+[[embedding]]
+name = "cohere-en-v3"
+model = "cohere.embed-english-v3"
+truncate = "END"
+
+[[embedding]]
+name = "cohere-multi-v3"
+model = "cohere.embed-multilingual-v3"
+truncate = "END"
+
+[[embedding]]
+name = "cohere-v4"
+model = "cohere.embed-v4:0"
+output_dimension = 1536
+embedding_types = ["float"]
+
+[[embedding]]
+name = "nova-2"
+model = "amazon.nova-2-multimodal-embeddings-v1:0"
+embeddingDimension = 3072
+rpm = 18  # account quota is 20 requests/minute; ~37 min for 669 texts

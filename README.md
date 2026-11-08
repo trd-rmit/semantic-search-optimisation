@@ -10,7 +10,7 @@ We test one change at a time (pre-processing, embedding model, search method, re
 - **Supporting metrics:** `hit@1`, `hit@3`, `hit@10`, `MRR@10` (mean reciprocal rank: how high the correct chunk ranks on average).
 - **Statistics:** with a small test set, a difference of a few percent can be noise. Plan: 200+ questions and a significance test (e.g. paired bootstrap) before we call a winner.
 
-## Step 1: Data (to do)
+## Step 1: Data (done)
 
 Every comparison depends on a test set: questions, each paired with the passage that answers it.
 
@@ -124,7 +124,7 @@ Label each question with the **answer passage itself**, not a chunk ID. Chunk ID
 | Bedrock Evaluations (RAG) | AWS-managed evaluation of a Bedrock Knowledge Base | Works if we use Knowledge Bases; fewer knobs |
 | Custom | Our own small scoring script | Full control, more to maintain |
 
-Decision: _pending_
+Decision: **custom**, in [semsearch/evaluate.py](semsearch/evaluate.py). It covers hit@k, MRR@10, breakdowns by question group, and an exact McNemar test between models. It's small, and it works directly with our chunk keys and `also_valid` labels.
 
 ## What we will explore
 
@@ -148,6 +148,52 @@ Decision: _pending_
 
 Data → baseline → chunking → embeddings → hybrid search → rerankers → ML. One change at a time, so every result shows what that change did.
 
-## Current state
+## Running an evaluation
 
-The `semsearch/` folder holds a first rough draft of the experiment code, written before the design was agreed. It may be replaced as we work through the steps above.
+Needs AWS credentials (`aws login`) and the Postgres container running.
+
+```bash
+python -m semsearch.evaluate configs/round1.toml
+```
+
+- Each `[[embedding]]` block in the config is one model + settings. Keys other than `name`, `model` and `rpm` go straight to the Bedrock API.
+- Vectors are stored in Postgres (pgvector, table `embeddings`, see [db/embeddings.sql](db/embeddings.sql)), keyed by config + chunk key / question ID + a hash of the text. Only missing or changed texts are sent to Bedrock, so re-scoring is free. The loader never drops these tables.
+- Search is exact cosine distance in SQL (`ORDER BY embedding <=> question`). There are only 279 chunks, so no approximate index is used.
+- Every run is saved in `runs` (with metrics) and `run_results` (each question's rank and top 10 chunk keys). A summary goes to `results/<config>.csv`.
+- `rpm` paces one-text-per-request models to the account quota. On this account: Nova 2 allows 20 requests/min, Titan v2 60/min, Titan v1 20/min.
+
+## Round 1: embedding models (dev set, 390 questions)
+
+Each model on its best settings: Titan v2 1024 dims; Cohere v3 1024 dims; Cohere v4 1536 dims; Nova 2 3072 dims; query/document modes on where the model has them.
+
+| Model | hit@1 | hit@3 | **hit@5** | hit@10 | MRR@10 |
+|---|---|---|---|---|---|
+| **Cohere Embed v4** | 0.656 | 0.859 | **0.915** | 0.956 | 0.769 |
+| **Nova 2 Multimodal Embeddings** | 0.667 | 0.851 | **0.905** | 0.954 | 0.768 |
+| Cohere Embed English v3 | 0.469 | 0.713 | 0.774 | 0.854 | 0.604 |
+| Cohere Embed Multilingual v3 | 0.500 | 0.700 | 0.746 | 0.815 | 0.611 |
+| Titan Text Embeddings v2 | 0.467 | 0.656 | 0.718 | 0.795 | 0.575 |
+
+hit@5 by group:
+
+| Model | Lay (195) | Situation (195) | Short chunk (296) | Long chunk >512 tok (94) | Scenario chunk (124) |
+|---|---|---|---|---|---|
+| Cohere v4 | 0.882 | 0.949 | 0.902 | 0.957 | 0.895 |
+| Nova 2 | 0.867 | 0.944 | 0.915 | 0.872 | 0.887 |
+| Cohere en v3 | 0.713 | 0.836 | 0.777 | 0.766 | 0.726 |
+| Cohere multi v3 | 0.677 | 0.815 | 0.740 | 0.766 | 0.621 |
+| Titan v2 | 0.615 | 0.821 | 0.710 | 0.745 | 0.710 |
+
+Findings:
+- **Cohere v4 and Nova 2 are statistically tied.** On hit@5, Cohere v4 got 22 questions only it answered and Nova 2 got 18 (McNemar p = 0.64). Both are clearly better than the older models: Cohere v4 vs en v3 is 65 vs 10 (p < 0.001), vs Titan v2 is 84 vs 7.
+- **hit@10 is the ceiling for a reranker.** A reranker only re-sorts the candidates it is given. With Cohere v4, the right chunk is in the top 10 for 95.6% of questions but in the top 5 for only 91.5%, so a good reranker on 10 candidates could lift hit@5 towards ~95%. More candidates (top 20/50) raise that ceiling further. Measuring that is free, because all vectors are stored: only the SQL `LIMIT` changes.
+- **Everyday wording is the hard part for every model.** Lay questions score lower everywhere. Titan v2 drops from 82% (situation) to 62% (lay); the new models keep it to 87–88%.
+- **Cutting long chunks short barely hurt Cohere v3** (76.6% long vs 77.7% short): the title and main rules sit at the start of each chunk. Nova 2 is weaker on long chunks (87% vs 92%).
+- **Telling sibling scenarios apart** is weakest for Cohere multilingual v3 (62%).
+- **9 questions failed with every model** in the first four runs. Two causes:
+  - Tiny chunks lose to richer neighbours. *Fibromyalgia* ("Accept." plus one paragraph) ranks 95th behind *Painkillers* for a question that mentions paracetamol. This is a case for keyword (BM25) / hybrid search.
+  - Some `also_valid` labels are missing, e.g. *Surgery* for a keyhole knee surgery question labelled *Endoscopy*.
+- Skipped: Titan v1. It's throttled on this account, and it is commented out in [configs/round1.toml](configs/round1.toml).
+- Account quotas matter: Nova 2 took ~37 min for 669 texts at 20 requests/min. Cohere sends 96 texts per request and finished in about a minute.
+
+Next: round 2 tests settings (vector size, int8/binary, query/document mode) on Cohere v4 and Nova 2.
