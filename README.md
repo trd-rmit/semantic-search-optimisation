@@ -72,7 +72,36 @@ One scenario has no chunk: Immunisation → "Non-exposed" only says "see Immunis
 
 68 chunks (50 whole entries, 18 scenarios) are over ~512 tokens. Cohere Embed v3 cuts input off at 512 tokens; Titan v2 (8k) and Cohere v4 read them whole.
 
-**Still open:** there are no questions yet, so we need to write them (LLM-generated, then checked by a person).
+### Questions (the test set)
+
+[data/questions.jsonl](data/questions.jsonl) holds **558 questions, 2 per chunk**. It is the source of truth and is kept in git; the loader copies it into `questions` and `question_chunks`.
+
+| Style | What it tests | Example |
+|---|---|---|
+| `lay` (279) | Everyday words instead of guideline terms | "My little boy has just come down with slapped cheek from nursery. Do I need to put off giving blood?" → `parvovirus-b19#2` |
+| `situation` (279) | A concrete rule: time period, condition, exception; for scenarios, the right one among its siblings | "My partner was paid for sex years ago … Does that affect whether I can donate?" → `blood-safety` |
+
+Each question has:
+- `primary`: the chunk that answers it.
+- `also_valid`: other chunks that also answer it on their own; 37 questions have one. A search hit on any of these counts.
+- `answer`: a one-line expected answer, for reviewers.
+- `split`: `dev` (390) for experiments, or `test` (168), held out until the end. The split is by entry, so all questions about an entry are on the same side.
+- `review`: `ok` / `bad` / empty.
+
+Questions point at chunks by `chunks.key` (`alopecia`, `hepatitis-b#3`), which stays the same when the database is reloaded.
+
+How they were made: written by Claude in-session from each chunk's text, following a written brief. The brief says: don't copy the chunk's phrases, keep the entry title out of lay questions, and use British English. The merge step checks for exactly 2 questions per chunk, valid keys, no duplicates, and no run of 7+ words copied from the chunk.
+
+Known limits:
+- `also_valid` was judged mostly from chunk titles and links, so it is probably incomplete.
+- Some lay questions are a bit forced, because they avoid an everyday title word ("lockjaw" for tetanus).
+- Routing-only chunks (e.g. `catarrh#1`, `pneumothorax#2`) have thin questions.
+
+**Review:** in the browser site, click "Next unreviewed question" and mark ✓ / ✗. Marks are saved straight into `data/questions.jsonl`.
+
+Source text quirks found while writing questions (stored as published):
+- *Weight* says "must not donate if under 65 kg" but also "accept if over 50 kg".
+- *Immunisation, live* says "less than 8 weeks: must not donate" but also "more than 4 weeks: accept".
 
 Ways to build the test set:
 

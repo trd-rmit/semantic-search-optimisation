@@ -47,6 +47,15 @@
   .text { white-space: pre-wrap; margin: 4px 0; }
   .chunk { border-left: 4px solid var(--accent); }
   .chunk .kind { color: var(--accent); }
+  .qs { margin: 8px 0 0; padding: 8px 0 0; border-top: 1px dashed var(--line); }
+  .q { padding: 6px 8px; margin: 4px 0; border-radius: 6px; background: var(--bg); scroll-margin-top: 12px; }
+  .q.flash { outline: 2px solid var(--accent); }
+  .q .qtext { font-weight: 600; }
+  .q .qans { color: var(--muted); font-size: 13px; }
+  .q .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+  .q button.on-ok { background: #1a7f37; color: #fff; border-color: #1a7f37; }
+  .q button.on-bad { background: #b42318; color: #fff; border-color: #b42318; }
+  .tag { font-size: 11px; padding: 0 6px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); }
   .links { margin: 6px 0 0; padding: 6px 0 0; border-top: 1px dashed var(--line); font-size: 13px; }
   .links li { margin: 2px 0; }
   a, .go { color: var(--accent); cursor: pointer; text-decoration: none; }
@@ -69,6 +78,8 @@
 <header>
   <h1>JPAC Database Browser</h1>
   <span class="counts" id="counts">loading…</span>
+  <span class="counts" id="qstats"></span>
+  <button id="next-review" type="button">Next unreviewed question</button>
   <button id="toggle-orig" type="button">Hide original page</button>
 </header>
 <main id="main">
@@ -89,11 +100,39 @@ const el = (tag, attrs = {}, ...kids) => {
   return n;
 };
 let current = null;
+let questions = [];  // {question_id, review, entry_id} for every question, by primary chunk
+
+function updateQStats() {
+  const n = (r) => questions.filter((q) => q.review === r).length;
+  $("#qstats").textContent = questions.length
+    ? `${questions.length} questions · reviewed ${n("ok") + n("bad")} (✓ ${n("ok")}, ✗ ${n("bad")})` : "";
+  $("#next-review").hidden = !questions.some((q) => q.review == null);
+}
+
+async function setReview(qid, review, row) {
+  const r = await fetch("/api/review", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question_id: qid, review }) });
+  if (!r.ok) { row.append(el("span", { class: "tag" }, `Could not save (${r.status})`)); return false; }
+  for (const q of questions) if (q.question_id === qid) q.review = review;
+  row.querySelector(".ok").className = "ok" + (review === "ok" ? " on-ok" : "");
+  row.querySelector(".bad").className = "bad" + (review === "bad" ? " on-bad" : "");
+  updateQStats();
+  return true;
+}
+
+$("#next-review").onclick = () => {
+  const todo = questions.filter((q) => q.review == null);
+  if (!todo.length) return;
+  const q = todo[Math.floor(Math.random() * todo.length)];
+  show(q.entry_id, null, null, q.question_id);
+};
 
 async function loadTree() {
   const t = await (await fetch("/api/tree")).json();
   const c = t.counts;
   $("#counts").textContent = `${c.entries} entries · ${c.scenarios} scenarios · ${c.sections} sections · ${c.links} links · ${c.chunks} chunks`;
+  questions = t.questions;
+  updateQStats();
   const by = (rows, key) => {
     const m = new Map();
     for (const r of rows) { if (!m.has(r[key])) m.set(r[key], []); m.get(r[key]).push(r); }
@@ -147,7 +186,29 @@ function sectionCard(s, links) {
     el("details", { class: "raw" }, el("summary", {}, "Stored HTML"), el("pre", {}, s.html)));
 }
 
-async function show(entryId, sectionId = null, scenarioId = null) {
+function questionList(qs) {
+  if (!qs.length) return null;
+  return el("div", { class: "qs" }, el("strong", {}, `Questions answered by this chunk (${qs.length})`),
+    ...qs.map((q) => {
+      const row = el("div", { class: "row" },
+        el("span", { class: "tag" }, q.role === "primary" ? "primary" : "also valid"),
+        el("span", { class: "tag" }, q.style), el("span", { class: "tag" }, q.split),
+        el("span", { class: "keys" }, `${q.question_id} → ${q.labels}`));
+      const ok = el("button", { type: "button", class: "ok" + (q.review === "ok" ? " on-ok" : ""), title: "Good question, right chunk" }, "✓");
+      const bad = el("button", { type: "button", class: "bad" + (q.review === "bad" ? " on-bad" : ""), title: "Bad question or wrong chunk" }, "✗");
+      const toggle = (mark) => async () => {  // clicking an active mark clears it
+        const v = q.review === mark ? null : mark;
+        if (await setReview(q.question_id, v, row)) q.review = v;
+      };
+      ok.onclick = toggle("ok");
+      bad.onclick = toggle("bad");
+      row.prepend(ok, bad);
+      return el("div", { class: "q", id: `q-${q.question_id}` },
+        el("div", { class: "qtext" }, q.question), el("div", { class: "qans" }, `Expected answer: ${q.answer}`), row);
+    }));
+}
+
+async function show(entryId, sectionId = null, scenarioId = null, questionId = null) {
   if (current !== entryId) {
     const d = await (await fetch(`/api/entry/${entryId}`)).json();
     current = entryId;
@@ -177,8 +238,9 @@ async function show(entryId, sectionId = null, scenarioId = null) {
       const sc = d.scenarios.find((x) => x.scenario_id === c.scenario_id);
       detail.append(el("div", { class: "section chunk", id: `chunk-${c.chunk_id}` },
         el("h4", {}, el("span", { class: "kind" }, sc ? `Chunk: scenario ${sc.position}` : "Chunk: whole entry"),
-          el("span", { class: "keys" }, `chunk_id ${c.chunk_id} · scenario_id ${c.scenario_id ?? "NULL"} · ${c.chars} chars (~${Math.round(c.chars / 4)} tokens) · section_ids ${c.section_ids.join(", ")}`)),
-        el("div", { class: "text" }, c.text)));
+          el("span", { class: "keys" }, `chunk_id ${c.chunk_id} · key ${c.key} · scenario_id ${c.scenario_id ?? "NULL"} · ${c.chars} chars (~${Math.round(c.chars / 4)} tokens) · section_ids ${c.section_ids.join(", ")}`)),
+        el("div", { class: "text" }, c.text),
+        questionList(d.questions.filter((q) => q.chunk_id === c.chunk_id))));
     }
     detail.append(el("h3", {}, `Linked from (${d.incoming.reduce((n, r) => n + r.n, 0)} links)`),
       d.incoming.length ? el("ul", {}, ...d.incoming.map((r) => el("li", {},
@@ -190,7 +252,8 @@ async function show(entryId, sectionId = null, scenarioId = null) {
     const node = document.querySelector(`#tree-body > details[data-entry="${entryId}"]`);
     if (node) { node.open = true; node.firstChild.classList.add("sel"); node.scrollIntoView({ block: "nearest" }); }
   }
-  const target = sectionId ? $(`#sec-${sectionId}`) : scenarioId ? $(`#scen-${scenarioId}`) : null;
+  const target = questionId ? document.getElementById(`q-${questionId}`)
+    : sectionId ? $(`#sec-${sectionId}`) : scenarioId ? $(`#scen-${scenarioId}`) : null;
   if (target) {
     target.scrollIntoView({ block: "start" });
     target.classList.add("flash");

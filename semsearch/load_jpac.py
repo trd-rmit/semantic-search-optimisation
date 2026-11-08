@@ -1,8 +1,10 @@
-"""Parse the JPAC offline HTML (WB-DSG) into Postgres: entries, scenarios, sections, links, then chunks.
+"""Parse the JPAC offline HTML (WB-DSG) into Postgres: entries, scenarios, sections, links, then chunks,
+then the evaluation questions from data/questions.jsonl.
 
 Usage: python -m semsearch.load_jpac
-Drops and recreates the tables from db/schema.sql and db/chunks.sql on every run.
+Drops and recreates the tables (db/schema.sql, db/chunks.sql, db/questions.sql) on every run.
 """
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +14,7 @@ import psycopg
 from bs4 import BeautifulSoup
 
 WB_DIR = Path("data/jpac/site/preview.jpac.org.uk/guidelines/wb")
+QUESTIONS = Path("data/questions.jsonl")
 BASE_URL = "https://www.jpac.org.uk/guidelines/wb/"
 KINDS = {
     "also known as": "also_known_as", "definition/s": "definitions", "includes": "includes",
@@ -116,6 +119,28 @@ def connect(**kwargs):
                            f"user={env['POSTGRES_USER']} password={env['POSTGRES_PASSWORD']}", **kwargs)
 
 
+def load_questions(cur):
+    """Fill questions/question_chunks from data/questions.jsonl, resolving chunk keys to chunk ids."""
+    cur.execute(Path("db/questions.sql").read_text())
+    if not QUESTIONS.exists():
+        return
+    cur.execute("SELECT key, chunk_id FROM chunks")
+    chunk_ids = dict(cur.fetchall())
+    for line in QUESTIONS.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        q = json.loads(line)
+        labels = [(q["primary"], "primary")] + [(k, "also_valid") for k in q["also_valid"]]
+        if missing := [k for k, _ in labels if k not in chunk_ids]:
+            raise ValueError(f"{q['id']}: unknown chunk keys {missing}")
+        cur.execute("INSERT INTO questions (question_id, question, style, answer, split, review)"
+                    " VALUES (%s, %s, %s, %s, %s, %s)",
+                    (q["id"], q["question"], q["style"], q["answer"], q["split"], q.get("review")))
+        for key, role in labels:
+            cur.execute("INSERT INTO question_chunks (question_id, chunk_id, role) VALUES (%s, %s, %s)",
+                        (q["id"], chunk_ids[key], role))
+
+
 def main():
     pages = [(p, p.parent.name) for p in sorted((WB_DIR / "index").glob("*/index.html"))]
     parsed = [parse_page(*p) for p in pages]
@@ -153,7 +178,8 @@ def main():
                                  a.get_text(" ", strip=True), context_of(a, dd)))
 
         cur.execute(Path("db/chunks.sql").read_text())
-        for table in ["entries", "scenarios", "sections", "links", "chunks", "chunk_sections"]:
+        load_questions(cur)
+        for table in ["entries", "scenarios", "sections", "links", "chunks", "chunk_sections", "questions", "question_chunks"]:
             cur.execute(f"SELECT count(*) FROM {table}")
             print(f"{table:10} {cur.fetchone()[0]}")
 

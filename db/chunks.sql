@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS chunk_sections, chunks CASCADE;
 
 CREATE TABLE chunks (
     chunk_id    serial PRIMARY KEY,
+    key         text NOT NULL UNIQUE,                                -- stable across reloads: 'alopecia', 'hepatitis-b#3'
     entry_id    int  NOT NULL REFERENCES entries ON DELETE CASCADE,
     scenario_id int  UNIQUE REFERENCES scenarios ON DELETE CASCADE,   -- NULL = whole-entry chunk
     text        text NOT NULL,                                       -- what gets embedded
@@ -37,8 +38,8 @@ JOIN sections s ON s.entry_id = u.entry_id AND (s.scenario_id IS NULL OR s.scena
 WHERE s.kind IN ('also_known_as', 'definitions', 'includes', 'excludes', 'obligatory', 'discretionary',
                  'additional_information', 'post_donation_illness');
 
-INSERT INTO chunks (entry_id, scenario_id, text)
-SELECT m.entry_id, m.unit_scenario_id,
+INSERT INTO chunks (key, entry_id, scenario_id, text)
+SELECT e.slug || COALESCE('#' || sc.position, ''), m.entry_id, m.unit_scenario_id,
        'Entry: ' || e.title || COALESCE(E'\nScenario: ' || sc.title, '') || E'\n\n' ||
        string_agg(
            CASE m.kind
@@ -55,7 +56,7 @@ SELECT m.entry_id, m.unit_scenario_id,
 FROM chunk_members m
 JOIN entries e ON e.entry_id = m.entry_id
 LEFT JOIN scenarios sc ON sc.scenario_id = m.unit_scenario_id
-GROUP BY m.entry_id, m.unit_scenario_id, e.title, sc.title, sc.position
+GROUP BY m.entry_id, m.unit_scenario_id, e.slug, e.title, sc.title, sc.position
 ORDER BY lower(e.title), sc.position NULLS FIRST;
 
 INSERT INTO chunk_sections (chunk_id, section_id)

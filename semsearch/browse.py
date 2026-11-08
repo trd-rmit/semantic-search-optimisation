@@ -6,12 +6,13 @@ Usage: python -m semsearch.browse   then open http://localhost:8000
 import json
 import mimetypes
 import re
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from psycopg.rows import dict_row
 
-from semsearch.load_jpac import connect
+from semsearch.load_jpac import QUESTIONS, connect
 
 PAGE = Path(__file__).with_name("browse.html")
 SITE = Path("data/jpac/site").resolve()
@@ -27,6 +28,8 @@ def tree():
         "counts": query("SELECT (SELECT count(*) FROM entries) AS entries, (SELECT count(*) FROM scenarios) AS scenarios,"
                         " (SELECT count(*) FROM sections) AS sections, (SELECT count(*) FROM links) AS links,"
                         " (SELECT count(*) FROM chunks) AS chunks")[0],
+        "questions": query("SELECT q.question_id, q.review, c.entry_id FROM questions q JOIN question_chunks qc"
+                           " USING (question_id) JOIN chunks c USING (chunk_id) WHERE qc.role = 'primary'"),
         "entries": query("SELECT entry_id, slug, title FROM entries ORDER BY lower(title)"),
         "scenarios": query("SELECT scenario_id, entry_id, position, title FROM scenarios ORDER BY entry_id, position"),
         "sections": query("SELECT section_id, entry_id, scenario_id, kind, position FROM sections ORDER BY entry_id, position"),
@@ -44,14 +47,38 @@ def entry(entry_id):
         "links": query("SELECT l.*, t.title AS to_title FROM links l JOIN sections s ON s.section_id = l.from_section_id"
                        " LEFT JOIN entries t ON t.entry_id = l.to_entry_id WHERE s.entry_id = %s ORDER BY l.link_id",
                        entry_id),
-        "chunks": query("SELECT c.chunk_id, c.scenario_id, c.chars, c.text, array_agg(cs.section_id ORDER BY cs.section_id)"
+        "chunks": query("SELECT c.chunk_id, c.key, c.scenario_id, c.chars, c.text, array_agg(cs.section_id ORDER BY cs.section_id)"
                         " AS section_ids FROM chunks c JOIN chunk_sections cs USING (chunk_id)"
                         " LEFT JOIN scenarios sc USING (scenario_id) WHERE c.entry_id = %s"
                         " GROUP BY c.chunk_id, sc.position ORDER BY sc.position NULLS FIRST", entry_id),
+        "questions": query("SELECT q.*, qc.chunk_id, qc.role, (SELECT string_agg(c2.key || ' (' || qc2.role || ')', ', '"
+                           " ORDER BY qc2.role DESC, c2.key) FROM question_chunks qc2 JOIN chunks c2 USING (chunk_id)"
+                           " WHERE qc2.question_id = q.question_id) AS labels FROM questions q JOIN question_chunks qc"
+                           " USING (question_id) JOIN chunks c USING (chunk_id) WHERE c.entry_id = %s"
+                           " ORDER BY qc.role DESC, q.question_id", entry_id),
         "incoming": query("SELECT f.entry_id, f.title, s.kind AS in_section, count(*) AS n FROM links l"
                           " JOIN sections s ON s.section_id = l.from_section_id JOIN entries f ON f.entry_id = s.entry_id"
                           " WHERE l.to_entry_id = %s GROUP BY 1, 2, 3 ORDER BY lower(f.title)", entry_id),
     }
+
+
+REVIEW_LOCK = threading.Lock()
+
+
+def save_review(qid, review):
+    """Write a review mark to data/questions.jsonl (the source of truth) and to the database."""
+    with REVIEW_LOCK:
+        rows = [json.loads(line) for line in QUESTIONS.read_text(encoding="utf-8").splitlines() if line.strip()]
+        hit = [r for r in rows if r["id"] == qid]
+        if not hit:
+            return False
+        hit[0]["review"] = review
+        tmp = QUESTIONS.with_suffix(".tmp")
+        tmp.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+        tmp.replace(QUESTIONS)  # atomic swap, so a crash never leaves a half-written file
+        with connect() as conn:
+            conn.execute("UPDATE questions SET review = %s WHERE question_id = %s", (review, qid))
+    return True
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -80,6 +107,17 @@ class Handler(BaseHTTPRequestHandler):
             if file.is_relative_to(SITE) and file.is_file():
                 return self.send(200, file.read_bytes(), mimetypes.guess_type(file.name)[0] or "application/octet-stream")
         self.send(404, b"not found", "text/plain")
+
+    def do_POST(self):
+        if self.path != "/api/review":
+            return self.send(404, b"not found", "text/plain")
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+        qid, review = body.get("question_id"), body.get("review")
+        if not isinstance(qid, str) or review not in ("ok", "bad", None):
+            return self.send(400, b"bad request", "text/plain")
+        if not save_review(qid, review):
+            return self.send(404, b"unknown question", "text/plain")
+        self.send_json({"question_id": qid, "review": review})
 
     def log_message(self, *args):  # keep the console quiet
         pass
