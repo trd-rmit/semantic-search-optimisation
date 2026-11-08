@@ -4,6 +4,20 @@ An experiment project on AWS. The goal: **for each question, get the chunk that 
 
 We test one change at a time (pre-processing, embedding model, search method, reranker, ML models) and measure what each one does.
 
+## Key findings: embedding models (dev set, 390 questions)
+
+Each model on its best settings: Titan v2 1024 dims; Cohere v3 1024 dims; Cohere v4 1536 dims; Nova 2 3072 dims; query/document modes on where the model has them.
+
+Share of questions where the right chunk is the **1st** result, in the **top 5**, and in the **top 10**:
+
+| Model | hit@1 | **hit@5** | hit@10 |
+|---|---|---|---|
+| **Cohere Embed v4** | 65.6% | **91.5%** | 95.6% |
+| **Nova 2 Multimodal Embeddings** | 66.7% | **90.5%** | 95.4% |
+| Cohere Embed English v3 | 46.9% | 77.4% | 85.4% |
+| Cohere Embed Multilingual v3 | 50.0% | 74.6% | 81.5% |
+| Titan Text Embeddings v2 | 46.7% | 71.8% | 79.5% |
+
 ## Goal and metric
 
 - **Primary metric:** `hit@5`, the share of questions where the correct chunk appears in the top 5 results.
@@ -162,16 +176,3 @@ python -m semsearch.evaluate configs/round1.toml
 - Every run is saved in `runs` (with metrics) and `run_results` (each question's rank and top 10 chunk keys). A summary goes to `results/<config>.csv`.
 - `rpm` paces one-text-per-request models to the account quota. On this account: Nova 2 allows 20 requests/min, Titan v2 60/min, Titan v1 20/min.
 
-## Round 1: embedding models (dev set, 390 questions)
-
-Each model on its best settings: Titan v2 1024 dims; Cohere v3 1024 dims; Cohere v4 1536 dims; Nova 2 3072 dims; query/document modes on where the model has them.
-
-Share of questions where the right chunk is the **1st** result, in the **top 5**, and in the **top 10**:
-
-| Model | hit@1 | **hit@5** | hit@10 |
-|---|---|---|---|
-| **Cohere Embed v4** | 65.6% | **91.5%** | 95.6% |
-| **Nova 2 Multimodal Embeddings** | 66.7% | **90.5%** | 95.4% |
-| Cohere Embed English v3 | 46.9% | 77.4% | 85.4% |
-| Cohere Embed Multilingual v3 | 50.0% | 74.6% | 81.5% |
-| Titan Text Embeddings v2 | 46.7% | 71.8% | 79.5% |
