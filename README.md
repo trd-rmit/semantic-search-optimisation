@@ -14,9 +14,37 @@ We test one change at a time (pre-processing, embedding model, search method, re
 
 Every comparison depends on a test set: questions, each paired with the passage that answers it.
 
-Open questions:
-- What documents are in the corpus (type, subject area, size, language)?
-- Do we have real user questions, or do we need to create them?
+**Chosen corpus:** UK blood donor eligibility rules, from the JPAC *Whole Blood and Components Donor Selection Guidelines*, Release 82 Issue 2 (effective 17 Sept 2026).
+
+- 229 A–Z entries. Each entry has named sections: Also known as, Includes/Excludes, Obligatory (must not donate), Discretionary (may donate if…), See if relevant, Additional information.
+- Two formats, downloaded from the [JPAC source files page](https://www.jpac.org.uk/guidelines/wb/source-files/) into `data/jpac/raw/`:
+  - `dsg_WB_203_82_2.pdf`: about 343 pages.
+  - `dsg_wb82_2_gdri61_1.zip`: offline HTML copy, extracted to `data/jpac/site/`.
+- `data/jpac/` is git-ignored. The content is © JPAC ([conditions of use](https://www.jpac.org.uk/conditions-of-use/)), used here for private research only and not redistributed.
+
+### Structured database (Postgres + pgvector in Docker)
+
+The HTML is parsed into four tables ([db/schema.sql](db/schema.sql)):
+
+| Table | Rows | What it holds |
+|---|---|---|
+| `entries` | 229 | The A–Z entries, with release and version date. Supporting pages (appendices, drugs and platelet donation) are left out |
+| `scenarios` | 81 | Named sub-cases inside 30 entries (e.g. Hepatitis B has 5) |
+| `sections` | 1,106 | Labelled blocks (Obligatory, Discretionary, See if relevant, …), as both plain text and HTML |
+| `links` | 1,094 | Every hyperlink in a section: 940 to other entries (foreign key), 116 external (including the left-out supporting pages), 38 to the A–Z list in general |
+
+Links start from a section, not just an entry, so a query can tell apart "see if relevant" links and links that are part of a rule (e.g. Alopecia's Discretionary section depends on *Steroid therapy*).
+
+```bash
+cp .env.example .env                 # then set a password
+docker compose up -d                 # Postgres on localhost:5432
+python -m semsearch.load_jpac        # drops and reloads the tables
+python -m semsearch.browse           # tree view of the tables at http://localhost:8000
+```
+
+Source data quirks, stored as published: Haematuria's version date reads "(Date)", and Hepatitis B says "Release 87" although the current release is 82.
+
+**Still open:** there are no questions yet, so we need to write them (LLM-generated, then checked by a person).
 
 Ways to build the test set:
 

@@ -4,3 +4,6 @@ __pycache__/
 results/
 *.egg-info/
 .env
+
+# JPAC source data: not ours to redistribute
+data/jpac/

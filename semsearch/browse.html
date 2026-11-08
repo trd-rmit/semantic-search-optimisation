@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JPAC Database Browser</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e1dc;
+    --accent: #1f5fbf; --accent-bg: #e8f0fc; --scen: #f3eee2; --scen-line: #d8c9a3;
+    --ob: #b42318; --dis: #1a7f37; --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --panel: #1f1f1e; --text: #ececea; --muted: #a2a29c; --line: #34342f;
+            --accent: #7aa7ff; --accent-bg: #1e2a40; --scen: #2a261d; --scen-line: #5a4d2c; --ob: #ff8a7a; --dis: #6fd38a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 10px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; }
+  .counts { color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: 300px 1fr 1fr; height: calc(100vh - 45px); }
+  main.no-orig { grid-template-columns: 300px 1fr; }
+  main.no-orig #orig { display: none; }
+  #tree, #detail, #orig { overflow: auto; border-right: 1px solid var(--line); }
+  #tree { padding: 8px; background: var(--panel); }
+  #filter { width: 100%; padding: 6px 8px; margin-bottom: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+  #tree details { margin-left: 10px; }
+  #tree summary { cursor: pointer; padding: 1px 4px; border-radius: 4px; }
+  #tree summary:hover, #tree .leaf:hover { background: var(--accent-bg); }
+  #tree .leaf { display: block; margin-left: 24px; padding: 1px 4px; cursor: pointer; color: var(--muted); border-radius: 4px; }
+  #tree .scen > summary { color: #8a6d1e; }
+  .sel { background: var(--accent-bg); }
+  #detail { padding: 16px 20px; }
+  .keys { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .meta { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0 16px; font-size: 13px; }
+  .meta dt { color: var(--muted); font-family: var(--mono); }
+  .meta dd { margin: 0; overflow-wrap: anywhere; }
+  .scenario { border: 1px solid var(--scen-line); background: var(--scen); border-radius: 8px; padding: 8px 10px; margin: 12px 0; }
+  .scenario > h3 { margin: 0 0 6px; font-size: 14px; }
+  .section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 8px 0; scroll-margin-top: 12px; }
+  .section.flash { outline: 2px solid var(--accent); }
+  .section h4 { margin: 0 0 4px; font-size: 13px; display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+  .section h4 .kind { text-transform: uppercase; letter-spacing: .03em; }
+  .kind-obligatory .kind { color: var(--ob); }
+  .kind-discretionary .kind { color: var(--dis); }
+  .text { white-space: pre-wrap; margin: 4px 0; }
+  .links { margin: 6px 0 0; padding: 6px 0 0; border-top: 1px dashed var(--line); font-size: 13px; }
+  .links li { margin: 2px 0; }
+  a, .go { color: var(--accent); cursor: pointer; text-decoration: none; }
+  a:hover, .go:hover { text-decoration: underline; }
+  details.raw summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  details.raw pre { white-space: pre-wrap; font-family: var(--mono); font-size: 12px; background: var(--bg); padding: 8px; border-radius: 6px; max-height: 300px; overflow: auto; }
+  #orig { display: flex; flex-direction: column; }
+  #orig .bar { padding: 8px 12px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+  #orig iframe { flex: 1; border: 0; background: #fff; width: 100%; }
+  .empty { color: var(--muted); padding: 24px; }
+  button { font: inherit; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+  @media (max-width: 900px) {
+    main, main.no-orig { grid-template-columns: 1fr; height: auto; }
+    #tree { max-height: 40vh; }
+    #orig iframe { height: 70vh; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>JPAC Database Browser</h1>
+  <span class="counts" id="counts">loading…</span>
+  <button id="toggle-orig" type="button">Hide original page</button>
+</header>
+<main id="main">
+  <nav id="tree" aria-label="Entries"><input id="filter" type="search" placeholder="Filter entries…" aria-label="Filter entries"><div id="tree-body"></div></nav>
+  <section id="detail"><p class="empty">Pick an entry on the left. Everything here is read live from Postgres.</p></section>
+  <section id="orig"><div class="bar">Original JPAC page (offline copy)</div><iframe id="orig-frame" title="Original JPAC page" sandbox></iframe></section>
+</main>
+<script>
+const LABEL = { also_known_as: "Also known as", definitions: "Definition/s", includes: "Includes", excludes: "Excludes",
+  obligatory: "Obligatory", discretionary: "Discretionary", see_if_relevant: "See if relevant",
+  additional_information: "Additional information", regulatory_information: "Regulatory information",
+  post_donation_illness: "Post donation illness" };
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === "class" ? n.className = v : k.startsWith("on") ? n[k] = v : n.setAttribute(k, v);
+  for (const kid of kids) if (kid != null) n.append(kid);
+  return n;
+};
+let current = null;
+
+async function loadTree() {
+  const t = await (await fetch("/api/tree")).json();
+  const c = t.counts;
+  $("#counts").textContent = `${c.entries} entries · ${c.scenarios} scenarios · ${c.sections} sections · ${c.links} links`;
+  const by = (rows, key) => {
+    const m = new Map();
+    for (const r of rows) { if (!m.has(r[key])) m.set(r[key], []); m.get(r[key]).push(r); }
+    return m;
+  };
+  const scens = by(t.scenarios, "entry_id"), secs = by(t.sections, "entry_id");
+  const body = $("#tree-body");
+  for (const e of t.entries) {
+    const node = el("details", { "data-title": e.title.toLowerCase(), "data-entry": e.entry_id },
+      el("summary", { onclick: () => show(e.entry_id) }, e.title));
+    const leaf = (s) => el("span", { class: "leaf", onclick: () => show(e.entry_id, s.section_id) }, LABEL[s.kind]);
+    const entrySecs = secs.get(e.entry_id) || [];
+    for (const s of entrySecs.filter((s) => s.scenario_id == null)) node.append(leaf(s));
+    for (const sc of scens.get(e.entry_id) || []) {
+      const sn = el("details", { class: "scen" }, el("summary", { onclick: () => show(e.entry_id, null, sc.scenario_id) }, `Scenario ${sc.position}: ${sc.title}`));
+      for (const s of entrySecs.filter((s) => s.scenario_id === sc.scenario_id)) sn.append(leaf(s));
+      node.append(sn);
+    }
+    body.append(node);
+  }
+}
+
+$("#filter").oninput = (ev) => {
+  const q = ev.target.value.trim().toLowerCase();
+  for (const d of document.querySelectorAll("#tree-body > details")) d.hidden = q && !d.dataset.title.includes(q);
+};
+
+$("#toggle-orig").onclick = () => {
+  const off = $("#main").classList.toggle("no-orig");
+  $("#toggle-orig").textContent = off ? "Show original page" : "Hide original page";
+};
+
+function linkItem(l) {
+  const ctx = l.context ? `${l.context} ` : "";
+  if (l.target_kind === "entry")
+    return el("li", {}, ctx, "→ ", el("span", { class: "go", onclick: () => show(l.to_entry_id) }, l.to_title),
+      el("span", { class: "keys" }, ` (to_entry_id ${l.to_entry_id}, link_id ${l.link_id})`));
+  if (l.target_kind === "external")
+    return el("li", {}, ctx, "→ ", el("a", { href: l.to_url, target: "_blank", rel: "noopener" }, l.anchor_text || l.to_url),
+      el("span", { class: "keys" }, ` (external, link_id ${l.link_id})`));
+  return el("li", {}, ctx, `→ "${l.anchor_text}" `, el("span", { class: "keys" }, `(a_to_z: points at the A–Z list in general, link_id ${l.link_id})`));
+}
+
+function sectionCard(s, links) {
+  const own = links.filter((l) => l.from_section_id === s.section_id);
+  return el("div", { class: `section kind-${s.kind}`, id: `sec-${s.section_id}` },
+    el("h4", {}, el("span", { class: "kind" }, LABEL[s.kind]),
+      el("span", { class: "keys" }, `section_id ${s.section_id} · position ${s.position} · scenario_id ${s.scenario_id ?? "NULL"}`)),
+    el("div", { class: "text" }, s.text),
+    own.length ? el("ul", { class: "links" }, ...own.map(linkItem)) : null,
+    el("details", { class: "raw" }, el("summary", {}, "Stored HTML"), el("pre", {}, s.html)));
+}
+
+async function show(entryId, sectionId = null, scenarioId = null) {
+  if (current !== entryId) {
+    const d = await (await fetch(`/api/entry/${entryId}`)).json();
+    current = entryId;
+    const e = d.entry;
+    const meta = el("dl", { class: "meta" });
+    for (const k of ["entry_id", "slug", "url", "release", "version_date", "version_details", "reason_for_change", "change_notification_url"]) {
+      const v = e[k];
+      meta.append(el("dt", {}, k), el("dd", {}, v == null ? el("span", { class: "keys" }, "NULL")
+        : String(v).startsWith("http") ? el("a", { href: v, target: "_blank", rel: "noopener" }, v) : String(v)));
+    }
+    const detail = $("#detail");
+    detail.replaceChildren(el("h2", { style: "margin:0" }, e.title), meta);
+    let box = null;
+    for (const s of d.sections) {
+      if (s.scenario_id == null) { box = null; detail.append(sectionCard(s, d.links)); continue; }
+      if (!box || box.dataset.id != s.scenario_id) {
+        const sc = d.scenarios.find((x) => x.scenario_id === s.scenario_id);
+        box = el("div", { class: "scenario", id: `scen-${sc.scenario_id}`, "data-id": sc.scenario_id },
+          el("h3", {}, `Scenario ${sc.position}: ${sc.title} `, el("span", { class: "keys" }, `scenario_id ${sc.scenario_id}`)));
+        detail.append(box);
+      }
+      box.append(sectionCard(s, d.links));
+    }
+    detail.append(el("h3", {}, `Linked from (${d.incoming.reduce((n, r) => n + r.n, 0)} links)`),
+      d.incoming.length ? el("ul", {}, ...d.incoming.map((r) => el("li", {},
+        el("span", { class: "go", onclick: () => show(r.entry_id) }, r.title), ` — in ${LABEL[r.in_section]}` + (r.n > 1 ? ` (×${r.n})` : ""))))
+        : el("p", { class: "keys" }, "No other entry links here."));
+    $("#orig-frame").src = `/site/preview.jpac.org.uk/guidelines/wb/index/${e.slug}/index.html`;
+    detail.scrollTop = 0;
+    for (const n of document.querySelectorAll("#tree .sel")) n.classList.remove("sel");
+    const node = document.querySelector(`#tree-body > details[data-entry="${entryId}"]`);
+    if (node) { node.open = true; node.firstChild.classList.add("sel"); node.scrollIntoView({ block: "nearest" }); }
+  }
+  const target = sectionId ? $(`#sec-${sectionId}`) : scenarioId ? $(`#scen-${scenarioId}`) : null;
+  if (target) {
+    target.scrollIntoView({ block: "start" });
+    target.classList.add("flash");
+    setTimeout(() => target.classList.remove("flash"), 1200);
+  }
+}
+
+loadTree();
+</script>
+</body>
+</html>

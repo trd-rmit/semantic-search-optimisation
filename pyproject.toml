@@ -3,7 +3,7 @@ name = "semsearch"
 version = "0.1.0"
 description = "Experiments to get the right chunk into the top 5 with AWS Bedrock embeddings and rerankers"
 requires-python = ">=3.11"
-dependencies = ["boto3", "numpy"]
+dependencies = ["boto3", "numpy", "beautifulsoup4", "psycopg[binary]"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
