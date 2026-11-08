@@ -4,7 +4,7 @@ An experiment project on AWS. The goal: **for each question, get the chunk that 
 
 We test one change at a time (pre-processing, embedding model, search method, reranker, ML models) and measure what each one does.
 
-## Key findings: embedding models (dev set, 390 questions)
+## Key findings: embedding models (390 questions)
 
 Each model on its best settings: Titan v2 1024 dims; Cohere v3 1024 dims; Cohere v4 1536 dims; Nova 2 3072 dims; query/document modes on where the model has them.
 
@@ -18,7 +18,7 @@ Share of questions where the right chunk is the **1st** result, in the **top 5**
 | Cohere Embed Multilingual v3 | 50.0% | 74.6% | 81.5% |
 | Titan Text Embeddings v2 | 46.7% | 71.8% | 79.5% |
 
-## Key findings: mean-centred embeddings (dev set, 390 questions)
+## Key findings: mean-centred embeddings (390 questions)
 
 Same vectors as above, with the mean chunk vector subtracted from every chunk and question vector. No re-embedding.
 
