@@ -1,0 +1,47 @@
+# Every chunking x embedding x rerank combination is evaluated.
+# Extra keys in [[embedding]] / [[rerank]] are passed straight to the Bedrock model API.
+data_dir = "data/sample"
+region = "us-west-2"   # Amazon Rerank 1.0 is not in us-east-1; check model availability per region
+candidates = 50        # retrieved by embeddings, then reranked
+
+[[chunking]]
+method = "fixed"
+size = 500
+overlap = 50
+
+[[chunking]]
+method = "fixed"
+size = 1000
+overlap = 100
+
+[[chunking]]
+method = "paragraph"
+max_size = 1000
+prefix_title = true
+
+[[embedding]]
+model = "amazon.titan-embed-text-v2:0"
+dimensions = 1024
+normalize = true
+
+[[embedding]]
+model = "amazon.titan-embed-text-v2:0"
+dimensions = 256
+normalize = true
+
+[[embedding]]
+model = "cohere.embed-english-v3"
+truncate = "END"
+
+# [[embedding]]
+# model = "cohere.embed-v4:0"
+# output_dimension = 1024
+
+[[rerank]]
+model = "none"
+
+[[rerank]]
+model = "amazon.rerank-v1:0"
+
+[[rerank]]
+model = "cohere.rerank-v3-5:0"

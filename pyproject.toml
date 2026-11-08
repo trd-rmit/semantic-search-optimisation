@@ -1,0 +1,15 @@
+[project]
+name = "semsearch"
+version = "0.1.0"
+description = "Experiments to get the right chunk into the top 5 with AWS Bedrock embeddings and rerankers"
+requires-python = ">=3.11"
+dependencies = ["boto3", "numpy"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["semsearch"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

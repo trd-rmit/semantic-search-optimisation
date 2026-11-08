@@ -1,0 +1,4 @@
+{"id": "q1", "query": "How long can a Lambda function run?", "doc_id": "lambda", "evidence": "A Lambda function can run for at most 15 minutes per invocation."}
+{"id": "q2", "query": "What is the cheapest S3 storage class?", "doc_id": "s3", "evidence": "S3 Glacier Deep Archive is the lowest-cost storage class"}
+{"id": "q3", "query": "How do I reorder search results by relevance on Bedrock?", "doc_id": "bedrock", "evidence": "The Rerank API reorders retrieved passages by relevance to a query using a reranker model."}
+{"id": "q4", "query": "How durable is S3?", "doc_id": "s3", "evidence": "S3 Standard is designed for 99.999999999% durability"}
