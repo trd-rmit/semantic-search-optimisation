@@ -32,15 +32,15 @@ Same vectors as above, with the mean chunk vector subtracted from every chunk an
 
 ## Embedding cost
 
-On-demand Amazon Bedrock prices (us-east-1, Nov 2026). This evaluation embeds 279 chunks and 390 questions (~108k tokens, estimated at 4 characters per token).
+On-demand Amazon Bedrock prices (us-east-1, Nov 2026). This evaluation embeds 279 chunks and 390 questions (~108k tokens); production cost assumes an average prompt of ~29 tokens. Token counts estimated at 4 characters per token.
 
-| Model | Price per 1M tokens | This evaluation |
-|---|---|---|
-| Cohere Embed v4 | $0.12 | $0.013 |
-| Nova 2 Multimodal Embeddings | $0.135 | $0.015 |
-| Cohere Embed English v3 | $0.10 | $0.011 |
-| Cohere Embed Multilingual v3 | $0.10 | $0.011 |
-| Titan Text Embeddings v2 | $0.02 | $0.002 |
+| Model | Price per 1M tokens | This evaluation | Per 1M Prompts (Production) |
+|---|---|---|---|
+| Cohere Embed v4 | $0.12 | $0.013 | $3.48 |
+| Nova 2 Multimodal Embeddings | $0.135 | $0.015 | $3.92 |
+| Cohere Embed English v3 | $0.10 | $0.011 | $2.90 |
+| Cohere Embed Multilingual v3 | $0.10 | $0.011 | $2.90 |
+| Titan Text Embeddings v2 | $0.02 | $0.002 | $0.58 |
 
 ## Goal and metric
 
