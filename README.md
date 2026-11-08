@@ -166,57 +166,22 @@ python -m semsearch.evaluate configs/round1.toml
 
 Each model on its best settings: Titan v2 1024 dims; Cohere v3 1024 dims; Cohere v4 1536 dims; Nova 2 3072 dims; query/document modes on where the model has them.
 
-| Model | hit@1 | hit@3 | **hit@5** | hit@10 | MRR@10 |
-|---|---|---|---|---|---|
-| **Cohere Embed v4** | 0.656 | 0.859 | **0.915** | 0.956 | 0.769 |
-| **Nova 2 Multimodal Embeddings** | 0.667 | 0.851 | **0.905** | 0.954 | 0.768 |
-| Cohere Embed English v3 | 0.469 | 0.713 | 0.774 | 0.854 | 0.604 |
-| Cohere Embed Multilingual v3 | 0.500 | 0.700 | 0.746 | 0.815 | 0.611 |
-| Titan Text Embeddings v2 | 0.467 | 0.656 | 0.718 | 0.795 | 0.575 |
+Share of questions where the right chunk is the **1st** result, in the **top 5**, and in the **top 10**:
 
-By question group (number of questions in brackets; long chunk = over ~512 tokens; best per column in bold):
-
-**hit@1**
-
-| Model | All (390) | Lay (195) | Situation (195) | Short chunk (296) | Long chunk (94) | Scenario chunk (124) |
-|---|---|---|---|---|---|---|
-| Cohere v4 | 65.6% | 57.4% | **73.9%** | 66.2% | **63.8%** | 54.8% |
-| Nova 2 | **66.7%** | **62.1%** | 71.3% | **71.6%** | 51.1% | **58.9%** |
-| Cohere en v3 | 46.9% | 37.4% | 56.4% | 48.0% | 43.6% | 36.3% |
-| Cohere multi v3 | 50.0% | 40.0% | 60.0% | 53.7% | 38.3% | 37.9% |
-| Titan v2 | 46.7% | 34.4% | 59.0% | 46.3% | 47.9% | 43.5% |
-
-**hit@5**
-
-| Model | All (390) | Lay (195) | Situation (195) | Short chunk (296) | Long chunk (94) | Scenario chunk (124) |
-|---|---|---|---|---|---|---|
-| Cohere v4 | **91.5%** | **88.2%** | **94.9%** | 90.2% | **95.7%** | **89.5%** |
-| Nova 2 | 90.5% | 86.7% | 94.4% | **91.5%** | 87.2% | 88.7% |
-| Cohere en v3 | 77.4% | 71.3% | 83.6% | 77.7% | 76.6% | 72.6% |
-| Cohere multi v3 | 74.6% | 67.7% | 81.5% | 74.0% | 76.6% | 62.1% |
-| Titan v2 | 71.8% | 61.5% | 82.0% | 71.0% | 74.5% | 71.0% |
-
-**hit@10**
-
-| Model | All (390) | Lay (195) | Situation (195) | Short chunk (296) | Long chunk (94) | Scenario chunk (124) |
-|---|---|---|---|---|---|---|
-| Cohere v4 | **95.6%** | **94.4%** | 96.9% | 94.6% | **98.9%** | 93.5% |
-| Nova 2 | 95.4% | 93.3% | **97.4%** | **95.6%** | 94.7% | **95.2%** |
-| Cohere en v3 | 85.4% | 83.1% | 87.7% | 84.8% | 87.2% | 86.3% |
-| Cohere multi v3 | 81.5% | 78.0% | 85.1% | 80.1% | 86.2% | 70.2% |
-| Titan v2 | 79.5% | 70.8% | 88.2% | 78.0% | 84.0% | 78.2% |
+| Model | hit@1 | **hit@5** | hit@10 |
+|---|---|---|---|
+| **Cohere Embed v4** | 65.6% | **91.5%** | 95.6% |
+| **Nova 2 Multimodal Embeddings** | 66.7% | **90.5%** | 95.4% |
+| Cohere Embed English v3 | 46.9% | 77.4% | 85.4% |
+| Cohere Embed Multilingual v3 | 50.0% | 74.6% | 81.5% |
+| Titan Text Embeddings v2 | 46.7% | 71.8% | 79.5% |
 
 Findings:
-- **Cohere v4 and Nova 2 are statistically tied.** On hit@5, Cohere v4 got 22 questions only it answered and Nova 2 got 18 (McNemar p = 0.64). Both are clearly better than the older models: Cohere v4 vs en v3 is 65 vs 10 (p < 0.001), vs Titan v2 is 84 vs 7.
-- **The two leaders have different strengths at hit@1.** Nova 2 puts the right chunk first more often on short chunks (71.6% vs 66.2%), lay questions (62.1% vs 57.4%) and scenarios (58.9% vs 54.8%). Cohere v4 is much stronger on long chunks (63.8% vs 51.1%). A combination of the two, or routing by chunk type, could beat either alone.
-- **hit@10 is the ceiling for a reranker.** A reranker only re-sorts the candidates it is given. With Cohere v4, the right chunk is in the top 10 for 95.6% of questions but in the top 5 for only 91.5%, so a good reranker on 10 candidates could lift hit@5 towards ~95%. More candidates (top 20/50) raise that ceiling further. Measuring that is free, because all vectors are stored: only the SQL `LIMIT` changes.
-- **Everyday wording is the hard part for every model.** Lay questions score lower everywhere. Titan v2 drops from 82% (situation) to 62% (lay); the new models keep it to 87–88%.
-- **Cutting long chunks short barely hurt Cohere v3** (76.6% long vs 77.7% short): the title and main rules sit at the start of each chunk. Nova 2 is weaker on long chunks (87% vs 92%).
-- **Telling sibling scenarios apart** is weakest for Cohere multilingual v3 (62%).
-- **9 questions failed with every model** in the first four runs. Two causes:
-  - Tiny chunks lose to richer neighbours. *Fibromyalgia* ("Accept." plus one paragraph) ranks 95th behind *Painkillers* for a question that mentions paracetamol. This is a case for keyword (BM25) / hybrid search.
-  - Some `also_valid` labels are missing, e.g. *Surgery* for a keyhole knee surgery question labelled *Endoscopy*.
-- Skipped: Titan v1. It's throttled on this account, and it is commented out in [configs/round1.toml](configs/round1.toml).
-- Account quotas matter: Nova 2 took ~37 min for 669 texts at 20 requests/min. Cohere sends 96 texts per request and finished in about a minute.
+- **Cohere v4 and Nova 2 are tied for first.** The 1-point gap at hit@5 could be chance (McNemar p = 0.64). Both are far ahead of the older models (p < 0.001).
+- **Room for a reranker:** for 95.6% of questions the right chunk is already in the top 10, but only 91.5% are in the top 5. A reranker that re-sorts the top 10 could lift hit@5 towards ~95%.
+- **9 questions failed with every model.** Two reasons: very short guideline entries lose out to longer, related ones (*Fibromyalgia* loses to *Painkillers* when a question mentions paracetamol), which keyword search could fix; and some questions have more than one correct answer that we haven't labelled yet.
+- Titan v1 was skipped: this account only allows it a few requests per minute. Nova 2 is also limited (20 requests per minute, ~37 minutes for this run); Cohere finished in about a minute.
+
+More detailed numbers (hit@3, MRR, results by question type) are stored per run in Postgres (`runs.metrics`).
 
 Next: round 2 tests settings (vector size, int8/binary, query/document mode) on Cohere v4 and Nova 2.
